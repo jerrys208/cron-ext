@@ -1,37 +1,90 @@
 package com.jray.cron;
 
-import com.jray.cron.field.CronFieldHandler;
+import com.jray.cron.field.FieldHandler;
 import org.springframework.util.StringUtils;
 
-import java.util.BitSet;
+import java.util.*;
 
 /**
  * Created by Jerry on 2014/7/22.
+ *
+ * Terminology:
+ *
+ *  1. cron expression:
+ *      1. expression > field > symbol
+ *      2. field: next <-> prev
+ *  2.
+ *
+ *
+ * Algorithm:
+ *
+ *  1. parsing expression into fields
+ *  2. feed fields to FieldHandler[] and get FieldMeta[]
+ *  3. get initial timestamp: t1
+ *  4. 依序 (小到大) 讓每個 field handler 將 t1 往前推進
+ *      4.1 field(n) 如果無法推進, field(n+1) 需推進一個單位, field(n) 重設後再嘗試.
+ *      4.2 field(n) 如果發生異動, field(n-1) 必須重設後重新推進.
+
+ *
+ * Example:
+ *
+ *  1. 0 0 9-17 * * MON-FRI *
+ *
  */
 public class CronEngine {
 
-    private CronFieldHandler[] fieldHandlers;
+    protected static final int[] FIELD_ID = {
+            Calendar.SECOND,
+            Calendar.MINUTE,
+            Calendar.HOUR_OF_DAY,
+            Calendar.DAY_OF_MONTH,
+            Calendar.MONTH,
+            Calendar.DAY_OF_WEEK,
+            Calendar.YEAR };
 
+    private FieldHandler[] fieldHandlers;
 
+    public CronEngine() {
 
-    public long getNextFireTime(CronExpression expression){
+    }
+
+    public CronEngine(FieldHandler[] fieldHandlers) {
+
+        this.fieldHandlers = fieldHandlers;
+    }
+
+    public long getNextFireTime(CronExpression expression) {
         return this.getNextFireTime(expression, System.currentTimeMillis());
     }
 
     public long getNextFireTime(CronExpression expression, long millis) {
 
         // check argument
-        if (expression == null){
+        if (expression == null) {
             throw new IllegalArgumentException("CronExpression must not be null");
         }
         // parse express (and save field meta) if necessary
-        if (!expression.isParsed()){
+        if (!expression.isParsed()) {
             expression.setFieldMeta(this.parseExpression(expression));
         }
-        return -1;
+        // calculate next fire time
+        Calendar calendar = new GregorianCalendar();
+        calendar.setTimeZone(expression.getTimeZone());
+        calendar.setTimeInMillis(millis);
+        calendar.set(Calendar.MILLISECOND, 0);
+        long originalTimestamp = calendar.getTimeInMillis();
+        // first search (ignore millisecond)
+        this.snapToNextFireTime(calendar, expression.getFiledMeta());
+        // second search if necessary (add 1 second to make sure result is after given time)
+        if (calendar.getTimeInMillis() == originalTimestamp) {
+            calendar.add(Calendar.SECOND, 1);
+            this.snapToNextFireTime(calendar, expression.getFiledMeta());
+        }
+        // return
+        return calendar.getTimeInMillis();
     }
 
-    private Object[] parseExpression(CronExpression expression){
+    private Object[] parseExpression(CronExpression expression) {
 
         // check argument
         if (expression == null || expression.getExpression() == null) {
@@ -46,19 +99,33 @@ public class CronEngine {
         // check field count (v.s. field handler)
         int count = fields.length;
         if (count > this.fieldHandlers.length) {
-            throw new IllegalArgumentException(
-                    String.format("expression contains more fields(%d) than handler(%d): %s",
-                            count, this.fieldHandlers.length, expression.getExpression()));
+            throw new IllegalArgumentException(String.format("expression contains more fields(%d) than handler(%d): %s", count, this.fieldHandlers.length, expression.getExpression()));
         }
         // parse fields
         Object[] fieldMeta = new Object[count];
-        for (int i=0; i<count; i++){
-            fieldMeta[i] = this.fieldHandlers[i].setField(fields[i]);
+        for (int i = 0; i < count; i++) {
+            fieldMeta[i] = this.fieldHandlers[i].parseField(fields[i]);
         }
         return fieldMeta;
     }
 
-    public void setFieldHandlers(CronFieldHandler[] fieldHandlers){
+    private void snapToNextFireTime(Calendar calendar, Object[] fieldMeta) {
+
+        // search from second to year one by one
+        int count = fieldMeta.length;
+        for (int i=0; i<count; i++) {
+            FieldHandler handler = this.fieldHandlers[i];
+            if (handler.next(calendar, fieldMeta[i])){
+                update calendar (reset minor fields)
+                if (i>0){
+                    go from second (i = -1)
+                }
+            }
+        }
+    }
+
+
+    public void setFieldHandlers(FieldHandler[] fieldHandlers) {
 
         this.fieldHandlers = fieldHandlers;
     }
@@ -66,12 +133,13 @@ public class CronEngine {
 
     /**
      * 將 cron expression 切割為獨立欄位
+     *
      * @param expression
      * @return
      */
-    private String[] splitExpression(String expression){
+    private String[] splitExpression(String expression) {
 
-        if (expression == null){
+        if (expression == null) {
             return new String[0];
         }
         String[] fields = expression.split("\\s+");
@@ -100,7 +168,7 @@ public class CronEngine {
 
         String[] fields = this.splitExpression(expression);
         if (fields == null || fields.length < 6) {
-            throw new IllegalArgumentException(String.format("invalid cron expression (\"%s\")",  expression));
+            throw new IllegalArgumentException(String.format("invalid cron expression (\"%s\")", expression));
         }
 /*
         setNumberHits(this.seconds, fields[0], 0, 60);
@@ -215,7 +283,6 @@ public class CronEngine {
         }
         return result;
     }
-
 
 
 }

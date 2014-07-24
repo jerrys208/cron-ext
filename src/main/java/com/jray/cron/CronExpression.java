@@ -1,5 +1,7 @@
 package com.jray.cron;
 
+import com.jray.cron.field.FieldMeta;
+
 import java.util.TimeZone;
 
 /**
@@ -16,7 +18,7 @@ public class CronExpression {
 
     private final TimeZone timeZone;
 
-    private Object[] fieldMeta;
+    private FieldMeta[] fieldMeta;
 
     public CronExpression(String expression) {
         this(expression, TimeZone.getDefault());
@@ -31,8 +33,12 @@ public class CronExpression {
         return this.fieldMeta != null;
     }
 
-    public void setFieldMeta(Object[] fieldMeta) {
+    public void setFieldMeta(FieldMeta[] fieldMeta) {
         this.fieldMeta = fieldMeta;
+    }
+
+    public Object[] getFiledMeta() {
+        return this.fieldMeta;
     }
 
     public String getExpression() {
