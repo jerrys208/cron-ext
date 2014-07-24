@@ -1,4 +1,4 @@
 cron-ext
 ========
 
-extensible cron expression parser
+extensible cron expression parser (not implement yet)
